@@ -17,7 +17,7 @@ pygame.display.init()
 # --- Streamlit Configurations ---
 st.set_page_config(page_title="2D Snake Maze Ultimate Pro", layout="centered")
 st.title("🐍 2D Snake Maze Ultimate Pro")
-st.write("Use the manual buttons below or custom configurations to guide your multi-segment snake to the trophy!")
+st.write("Use your physical keyboard inputs or manual buttons to guide your snake to the trophy!")
 
 # --- Game Resolution Settings ---
 TILE_SIZE = 30
@@ -195,6 +195,26 @@ with stat_col4:
     duration = int(time.time() - st.session_state.start_time)
     st.metric("Time Frame", f"{duration}s")
 
+# --- ⌨️ PURE PYTHON KEYBOARD CONTROLLER INTERFACE ---
+st.write("🎮 **Keyboard Se Khelne Ka Tareeqa:** Neeche diye gaye box par click karein, aur keyboard se arrow keys dabane ke baad **Enter** press karein!")
+key_capture = st.text_input("Yahan Arrow Keys (ya W,A,S,D) press karke Enter dabayein:", key="keyboard_state_handler")
+
+# Process keyboard keys mapping logic
+if key_capture:
+    user_key = key_capture.strip().lower()
+    if user_key in ["w", "up", "arrowup"]:
+        move_snake(0, -1)
+    elif user_key in ["s", "down", "arrowdown"]:
+        move_snake(0, 1)
+    elif user_key in ["a", "left", "arrowleft"]:
+        move_snake(-1, 0)
+    elif user_key in ["d", "right", "arrowright"]:
+        move_snake(1, 0)
+    
+    # Input register hote hi variable reset karke window refresh karein
+    st.session_state.keyboard_state_handler = ""
+    st.rerun()
+
 # --- Manual Python Controller Layout Rows ---
 c_row1, c_row2, c_row3 = st.columns([1, 1, 1])
 with c_row2: st.button("🔼 MOVE UP", on_click=move_snake, args=(0, -1), use_container_width=True)
@@ -220,7 +240,6 @@ offset_x = (WIDTH - (cols * TILE_SIZE)) // 2
 offset_y = (HEIGHT - (rows * TILE_SIZE)) // 2
 
 # --- PURE PYTHON CANVAS SHAKE RE-CALCULATION ---
-# Screen vibration handle karne ke liye render offsets mein matrix variables ko shuffle kiya jata hai
 if st.session_state.pure_python_shake > 0:
     offset_x += random.randint(-10, 10)
     offset_y += random.randint(-10, 10)
@@ -250,11 +269,9 @@ for target_item in st.session_state.active_items:
 for idx, segment in enumerate(st.session_state.snake_body):
     seg_rect = pygame.Rect(offset_x + segment[0] * TILE_SIZE + 3, offset_y + segment[1] * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6)
     
-    # Pure Python color blending algorithm for a smooth gradient tail effect
     if idx == 0:
         segment_color = (51, 255, 119) # Bright Green Head
     else:
-        # Dynamic phase color mapping logic
         color_phase = (idx * 35) % 120
         segment_color = (0, 210 - color_phase, 80 + color_phase // 2)
         
