@@ -1,149 +1,140 @@
+import os
+# Force Pygame to run without a physical display window (Headless mode for Streamlit)
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+
 import streamlit as st
 import pygame
+from PIL import Image
 import random
 import time
-from PIL import Image
 
-# --- Streamlit Page Configuration ---
-st.set_page_config(page_title="2D Maze Game", layout="centered")
-st.title("🐍 2D Snake Maze Game")
-st.write("Developed according to the internship task requirements.")
-
-# --- Game Constants ---
-TILE_SIZE = 30
-FPS = 30
-WIDTH, HEIGHT = 600, 450
-
-# Colors
-BG_COLOR = (20, 20, 30)
-WALL_COLOR = (50, 150, 200)      # Obstacles / Walls [cite: 17]
-SNAKE_COLOR = (50, 200, 50)     # Player Character [cite: 15]
-GOAL_COLOR = (220, 50, 50)      # Goal [cite: 18]
-
-# --- Initialize Pygame in Headless Mode (For Cloud/Web Compatibility) ---
-import os
-os.environ["SDL_VIDEODRIVER"] = "dummy" 
+# --- INITIALIZATION ---
+st.set_page_config(page_title="2D Snake Maze Game", page_icon="🐍", layout="centered")
 pygame.init()
-pygame.font.init()
-font = pygame.font.SysFont("Arial", 20)
 
-# --- Session State for Level & Progress ---
-if 'level' not in st.session_state:
-    st.session_state.level = 1
-if 'start_time' not in st.session_state:
-    st.session_state.start_time = time.time()
-if 'snake_pos' not in st.session_state:
-    st.session_state.snake_pos = [1, 1]
-if 'shake_frames' not in st.session_state:
-    st.session_state.shake_frames = 0
-
-# --- Random Maze Generation Algorithm (Recursive Backtracking) [cite: 14, 28] ---
-if 'maze' not in st.session_state or 'current_level' not in st.session_state or st.session_state.current_level != st.session_state.level:
-    cols = min(11 + (st.session_state.level // 5) * 2, 19)
-    rows = min(9 + (st.session_state.level // 5) * 2, 13)
+# --- ALGORITHM: RECURSIVE BACKTRACKING MAZE GENERATION ---
+def generate_maze(width, height):
+    # Create grid full of walls (1 = wall, 0 = path)
+    maze = [[1 for _ in range(width)] for _ in range(height)]
     
-    maze = [[1 for _ in range(cols)] for _ in range(rows)]
-    
-    def carve_passages(cx, cy):
-        directions = [(0, -2), (0, 2), (-2, 0), (2, 0)]
+    def carve_passages_from(cx, cy):
+        directions = [(0, -2), (2, 0), (0, 2), (-2, 0)]
         random.shuffle(directions)
         for dx, dy in directions:
             nx, ny = cx + dx, cy + dy
-            if 1 <= ny < rows-1 and 1 <= nx < cols-1 and maze[ny][nx] == 1:
-                maze[cy + dy//2][cx + dx//2] = 0
+            if 1 <= ny < height - 1 and 1 <= nx < width - 1 and maze[ny][nx] == 1:
+                maze[ny - dy//2][nx - dx//2] = 0
                 maze[ny][nx] = 0
-                carve_passages(nx, ny)
+                carve_passages_from(nx, ny)
                 
     maze[1][1] = 0
-    carve_passages(1, 1)
-    maze[rows-2][cols-2] = 0 # Solvability guaranteed [cite: 23]
-    
-    st.session_state.maze = maze
-    st.session_state.rows = rows
-    st.session_state.cols = cols
+    carve_passages_from(1, 1)
+    # Ensure goal area is open
+    maze[height-2][width-2] = 0 
+    maze[height-3][width-2] = 0 
+    maze[height-2][width-3] = 0 
+    return maze
+
+# --- SESSION STATE MANAGEMENT (Saves game data between button clicks) ---
+if "level" not in st.session_state:
+    st.session_state.level = 1
+    st.session_state.max_levels = 100
+    st.session_state.start_time = time.time()
+    st.session_state.maze_size = 11
+    st.session_state.maze = generate_maze(11, 11)
     st.session_state.snake_pos = [1, 1]
-    st.session_state.current_level = st.session_state.level
+    st.session_state.vibrate_alert = False
 
-# --- Controls & Input ---
-maze = st.session_state.maze
-rows = st.session_state.rows
-cols = st.session_state.cols
-snake_pos = st.session_state.snake_pos
+goal_pos = [st.session_state.maze_size - 2, st.session_state.maze_size - 2]
 
+# --- GAME LOGIC: MOVEMENT & COLLISION ---
 def move_snake(dx, dy):
-    new_x = snake_pos[0] + dx
-    new_y = snake_pos[1] + dy
-    
-    # Collision Detection [cite: 24]
-    if maze[new_y][new_x] == 1:
-        st.session_state.shake_frames = 5 # Trigger Screen Shake (Vibration feel)
-        st.session_state.snake_pos = [1, 1] # Restart Level Position [cite: 26]
-        st.session_state.start_time = time.time() # Reset Timer [cite: 19]
+    st.session_state.vibrate_alert = False
+    new_x = st.session_state.snake_pos[0] + dx
+    new_y = st.session_state.snake_pos[1] + dy
+
+    # Check wall collision
+    if st.session_state.maze[new_y][new_x] == 1:
+        # Vibrate/Restart Logic
+        st.session_state.vibrate_alert = True
+        st.session_state.snake_pos = [1, 1] # Restart Level Position
     else:
         st.session_state.snake_pos = [new_x, new_y]
         
-    # Win Condition [cite: 18, 25]
-    if st.session_state.snake_pos == [cols-2, rows-2]:
-        if st.session_state.level < 100:
+    # Check Goal reached
+    if st.session_state.snake_pos == goal_pos:
+        if st.session_state.level < st.session_state.max_levels:
             st.session_state.level += 1
-            st.balloons()
+            # Increase difficulty by increasing maze size
+            new_size = min(31, 11 + (st.session_state.level // 5) * 2) 
+            st.session_state.maze_size = new_size
+            st.session_state.maze = generate_maze(new_size, new_size)
+            st.session_state.snake_pos = [1, 1]
         else:
-            st.success("🎉 You completed all 100 levels! You won the game!")
+            st.session_state.level = "WIN"
 
-# UI Controls Layout [cite: 20]
-st.write(f"### Level: {st.session_state.level} / 100")
-elapsed_time = int(time.time() - st.session_state.start_time)
-st.write(f"⏱️ **Time Taken:** {elapsed_time} seconds") [cite: 19]
+# --- PYGAME RENDERING (Integrating Pygame in Streamlit) ---
+def render_game_image():
+    cell_size = 20
+    size = st.session_state.maze_size
+    surface = pygame.Surface((size * cell_size, size * cell_size))
+    surface.fill((30, 30, 30)) # Dark background
 
-col1, col2, col3 = st.columns([1, 1, 1])
-with col2: st.button("🔼 UP", on_click=move_snake, args=(0, -1), use_container_width=True)
-col4, col5, col6 = st.columns([1, 1, 1])
-with col4: st.button("◀️ LEFT", on_click=move_snake, args=(-1, 0), use_container_width=True)
-with col5: 
-    if st.button("🔄 Restart", use_container_width=True):
-        st.session_state.snake_pos = [1, 1]
-        st.session_state.start_time = time.time()
-with col6: st.button("▶️ RIGHT", on_click=move_snake, args=(1, 0), use_container_width=True)
-col7, col8, col9 = st.columns([1, 1, 1])
-with col8: st.button("🔽 DOWN", on_click=move_snake, args=(0, 1), use_container_width=True)
+    # Draw Maze Walls
+    for y in range(size):
+        for x in range(size):
+            if st.session_state.maze[y][x] == 1:
+                pygame.draw.rect(surface, (100, 100, 100), (x*cell_size, y*cell_size, cell_size, cell_size))
 
-# --- Pygame Rendering Logic  ---
-surface = pygame.Surface((WIDTH, HEIGHT))
-surface.fill(BG_COLOR)
+    # Draw Goal (Red)
+    pygame.draw.rect(surface, (255, 50, 50), (goal_pos[0]*cell_size, goal_pos[1]*cell_size, cell_size, cell_size))
 
-# Calculate centering offsets
-offset_x = (WIDTH - (cols * TILE_SIZE)) // 2
-offset_y = (HEIGHT - (rows * TILE_SIZE)) // 2
+    # Draw Snake Character (Green)
+    sx, sy = st.session_state.snake_pos
+    pygame.draw.rect(surface, (50, 205, 50), (sx*cell_size, sy*cell_size, cell_size, cell_size))
+    # Snake Eyes
+    pygame.draw.rect(surface, (255, 255, 255), (sx*cell_size + 4, sy*cell_size + 4, 4, 4))
+    pygame.draw.rect(surface, (255, 255, 255), (sx*cell_size + 12, sy*cell_size + 4, 4, 4))
 
-# Shake Effect
-if st.session_state.shake_frames > 0:
-    offset_x += random.randint(-5, 5)
-    offset_y += random.randint(-5, 5)
-    st.session_state.shake_frames -= 1
+    # Convert Pygame Surface to PIL Image for Streamlit
+    image_str = pygame.image.tostring(surface, "RGB")
+    return Image.frombytes("RGB", (size * cell_size, size * cell_size), image_str)
 
-# Draw Maze Walls [cite: 16, 17]
-for r in range(rows):
-    for c in range(cols):
-        rect = pygame.Rect(offset_x + c * TILE_SIZE, offset_y + r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-        if maze[r][c] == 1:
-            pygame.draw.rect(surface, WALL_COLOR, rect)
+# --- UI DISPLAY ---
+st.title("🐍 2D Snake Maze Game")
 
-# Draw Goal [cite: 16, 18]
-goal_rect = pygame.Rect(offset_x + (cols-2) * TILE_SIZE, offset_y + (rows-2) * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-pygame.draw.rect(surface, GOAL_COLOR, goal_rect)
+if st.session_state.level == "WIN":
+    total_time = int(time.time() - st.session_state.start_time)
+    st.success(f"🎉 Congratulations! You completed all 100 levels in {total_time} seconds!")
+    if st.button("Play Again"):
+        st.session_state.clear()
+        st.rerun()
+else:
+    # Display Stats
+    col1, col2 = st.columns(2)
+    col1.markdown(f"### Level: {st.session_state.level}/100")
+    elapsed = int(time.time() - st.session_state.start_time)
+    col2.markdown(f"### Time: {elapsed}s")
 
-# Draw Snake (Player) [cite: 11, 16]
-snake_rect = pygame.Rect(offset_x + snake_pos[0] * TILE_SIZE, offset_y + snake_pos[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-pygame.draw.rect(surface, SNAKE_COLOR, snake_rect)
+    # Vibrate/Collision Alert
+    if st.session_state.vibrate_alert:
+        st.toast("📳 VIBRATE: You hit a wall! Level Restarted.", icon="💥")
+        st.error("💥 Wall Hit! Back to start!")
 
-# Convert Pygame Surface to PIL Image for Streamlit Compatibility
-image_data = pygame.image.tostring(surface, "RGB")
-img = Image.frombytes("RGB", (WIDTH, HEIGHT), image_data)
+    # Show Pygame Rendered Maze
+    game_image = render_game_image()
+    st.image(game_image, use_column_width=False)
 
-# Display the game frame on Streamlit
-st.image(img, use_container_width=True)
-
-# Sidebar Quit Option [cite: 26]
-if st.sidebar.button("Quit & Reset Entire Game"):
-    st.session_state.clear()
-    st.rerun()
+    # Controls (On-Screen Buttons)
+    st.markdown("### Controls")
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c2:
+        if st.button("⬆️ UP", use_container_width=True): move_snake(0, -1)
+    
+    c4, c5, c6 = st.columns([1, 1, 1])
+    with c4:
+        if st.button("⬅️ LEFT", use_container_width=True): move_snake(-1, 0)
+    with c5:
+        if st.button("⬇️ DOWN", use_container_width=True): move_snake(0, 1)
+    with c6:
+        if st.button("➡️ RIGHT", use_container_width=True): move_snake(1, 0)
