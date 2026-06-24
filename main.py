@@ -1,149 +1,149 @@
+import streamlit as st
 import pygame
 import random
 import time
-import sys
+from PIL import Image
 
-# --- Constants & Configuration ---
-TILE_SIZE = 40
-FPS = 15 # Snake speed
-WIDTH, HEIGHT = 800, 600
+# --- Streamlit Page Configuration ---
+st.set_page_config(page_title="2D Maze Game", layout="centered")
+st.title("🐍 2D Snake Maze Game")
+st.write("Developed according to the internship task requirements.")
+
+# --- Game Constants ---
+TILE_SIZE = 30
+FPS = 30
+WIDTH, HEIGHT = 600, 450
 
 # Colors
 BG_COLOR = (20, 20, 30)
-WALL_COLOR = (50, 150, 200)
-SNAKE_COLOR = (50, 200, 50)
-GOAL_COLOR = (220, 50, 50)
-TEXT_COLOR = (255, 255, 255)
+WALL_COLOR = (50, 150, 200)      # Obstacles / Walls [cite: 17]
+SNAKE_COLOR = (50, 200, 50)     # Player Character [cite: 15]
+GOAL_COLOR = (220, 50, 50)      # Goal [cite: 18]
 
-# --- Pygame Initialization ---
+# --- Initialize Pygame in Headless Mode (For Cloud/Web Compatibility) ---
+import os
+os.environ["SDL_VIDEODRIVER"] = "dummy" 
 pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("100-Level Snake Maze Game")
-clock = pygame.time.Clock()
-font = pygame.font.SysFont("Arial", 24)
+pygame.font.init()
+font = pygame.font.SysFont("Arial", 20)
 
-# --- Maze Generation (Recursive Backtracking) ---
-def generate_maze(cols, rows):
-    """Generates a random maze using Recursive Backtracking algorithm."""
-    # Create grid full of walls (1 = wall, 0 = path)
+# --- Session State for Level & Progress ---
+if 'level' not in st.session_state:
+    st.session_state.level = 1
+if 'start_time' not in st.session_state:
+    st.session_state.start_time = time.time()
+if 'snake_pos' not in st.session_state:
+    st.session_state.snake_pos = [1, 1]
+if 'shake_frames' not in st.session_state:
+    st.session_state.shake_frames = 0
+
+# --- Random Maze Generation Algorithm (Recursive Backtracking) [cite: 14, 28] ---
+if 'maze' not in st.session_state or 'current_level' not in st.session_state or st.session_state.current_level != st.session_state.level:
+    cols = min(11 + (st.session_state.level // 5) * 2, 19)
+    rows = min(9 + (st.session_state.level // 5) * 2, 13)
+    
     maze = [[1 for _ in range(cols)] for _ in range(rows)]
     
     def carve_passages(cx, cy):
         directions = [(0, -2), (0, 2), (-2, 0), (2, 0)]
         random.shuffle(directions)
-        
         for dx, dy in directions:
             nx, ny = cx + dx, cy + dy
             if 1 <= ny < rows-1 and 1 <= nx < cols-1 and maze[ny][nx] == 1:
-                maze[cy + dy//2][cx + dx//2] = 0 # Carve through wall
-                maze[ny][nx] = 0 # Carve cell
+                maze[cy + dy//2][cx + dx//2] = 0
+                maze[ny][nx] = 0
                 carve_passages(nx, ny)
                 
-    maze[1][1] = 0 # Start point
+    maze[1][1] = 0
     carve_passages(1, 1)
+    maze[rows-2][cols-2] = 0 # Solvability guaranteed [cite: 23]
     
-    # Ensure Goal is reachable at the bottom right
-    maze[rows-2][cols-2] = 0 
-    maze[rows-3][cols-2] = 0 
-    maze[rows-2][cols-3] = 0 
+    st.session_state.maze = maze
+    st.session_state.rows = rows
+    st.session_state.cols = cols
+    st.session_state.snake_pos = [1, 1]
+    st.session_state.current_level = st.session_state.level
+
+# --- Controls & Input ---
+maze = st.session_state.maze
+rows = st.session_state.rows
+cols = st.session_state.cols
+snake_pos = st.session_state.snake_pos
+
+def move_snake(dx, dy):
+    new_x = snake_pos[0] + dx
+    new_y = snake_pos[1] + dy
     
-    return maze
+    # Collision Detection [cite: 24]
+    if maze[new_y][new_x] == 1:
+        st.session_state.shake_frames = 5 # Trigger Screen Shake (Vibration feel)
+        st.session_state.snake_pos = [1, 1] # Restart Level Position [cite: 26]
+        st.session_state.start_time = time.time() # Reset Timer [cite: 19]
+    else:
+        st.session_state.snake_pos = [new_x, new_y]
+        
+    # Win Condition [cite: 18, 25]
+    if st.session_state.snake_pos == [cols-2, rows-2]:
+        if st.session_state.level < 100:
+            st.session_state.level += 1
+            st.balloons()
+        else:
+            st.success("🎉 You completed all 100 levels! You won the game!")
 
-# --- Screen Shake Effect (Alternative to Vibration) ---
-def screen_shake():
-    """Shakes the screen slightly when the snake hits a wall."""
-    shake_offsets = [(5, 5), (-5, -5), (5, -5), (-5, 5), (0, 0)]
-    for offset in shake_offsets:
-        screen.fill(BG_COLOR)
-        # Briefly shift the display surface
-        display_surface = pygame.display.get_surface()
-        display_surface.blit(display_surface, offset)
-        pygame.display.flip()
-        pygame.time.wait(30)
+# UI Controls Layout [cite: 20]
+st.write(f"### Level: {st.session_state.level} / 100")
+elapsed_time = int(time.time() - st.session_state.start_time)
+st.write(f"⏱️ **Time Taken:** {elapsed_time} seconds") [cite: 19]
 
-# --- Main Game Function ---
-def main():
-    level = 1
-    max_levels = 100
-    
-    while level <= max_levels:
-        # Dynamic grid size based on level (gets harder)
-        cols = min(15 + (level // 5) * 2, 35) 
-        rows = min(11 + (level // 5) * 2, 25)
-        
-        # Center the maze on screen
-        offset_x = (WIDTH - (cols * TILE_SIZE)) // 2
-        offset_y = (HEIGHT - (rows * TILE_SIZE)) // 2 + 30
-        
-        maze = generate_maze(cols, rows)
-        
-        # Player attributes
-        snake_pos = [1, 1] # [x, y] in grid coordinates
-        start_time = time.time()
-        goal_pos = [cols-2, rows-2]
-        
-        level_running = True
-        while level_running:
-            screen.fill(BG_COLOR)
-            elapsed_time = int(time.time() - start_time)
-            
-            # --- Event Handling ---
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                
-                # Movement Controls
-                if event.type == pygame.KEYDOWN:
-                    new_x, new_y = snake_pos[0], snake_pos[1]
-                    if event.key == pygame.K_UP: new_y -= 1
-                    elif event.key == pygame.K_DOWN: new_y += 1
-                    elif event.key == pygame.K_LEFT: new_x -= 1
-                    elif event.key == pygame.K_RIGHT: new_x += 1
-                    
-                    # Collision Detection
-                    if maze[new_y][new_x] == 1:
-                        # Hit a wall! Shake and reset position/time
-                        screen_shake()
-                        snake_pos = [1, 1]
-                        start_time = time.time() # Reset timer for the level
-                    else:
-                        snake_pos = [new_x, new_y] # Move snake
-            
-            # --- Win Condition ---
-            if snake_pos == goal_pos:
-                level += 1
-                level_running = False # Break out to start next level
-            
-            # --- Drawing the Maze ---
-            for y in range(rows):
-                for x in range(cols):
-                    rect = pygame.Rect(offset_x + x * TILE_SIZE, offset_y + y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                    if maze[y][x] == 1:
-                        pygame.draw.rect(screen, WALL_COLOR, rect)
-                    
-            # Draw Goal
-            goal_rect = pygame.Rect(offset_x + goal_pos[0] * TILE_SIZE, offset_y + goal_pos[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-            pygame.draw.rect(screen, GOAL_COLOR, goal_rect)
-            
-            # Draw Snake
-            snake_rect = pygame.Rect(offset_x + snake_pos[0] * TILE_SIZE, offset_y + snake_pos[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-            pygame.draw.rect(screen, SNAKE_COLOR, snake_rect)
-            
-            # Draw UI (Level and Timer)
-            ui_text = font.render(f"Level: {level}/{max_levels}   |   Time: {elapsed_time}s", True, TEXT_COLOR)
-            screen.blit(ui_text, (20, 20))
-            
-            pygame.display.flip()
-            clock.tick(FPS)
-            
-    # --- Game Over / Won Screen ---
-    screen.fill(BG_COLOR)
-    win_text = font.render("Congratulations! You completed all 100 levels!", True, TEXT_COLOR)
-    screen.blit(win_text, (WIDTH//2 - 200, HEIGHT//2))
-    pygame.display.flip()
-    pygame.time.wait(5000)
-    pygame.quit()
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2: st.button("🔼 UP", on_click=move_snake, args=(0, -1), use_container_width=True)
+col4, col5, col6 = st.columns([1, 1, 1])
+with col4: st.button("◀️ LEFT", on_click=move_snake, args=(-1, 0), use_container_width=True)
+with col5: 
+    if st.button("🔄 Restart", use_container_width=True):
+        st.session_state.snake_pos = [1, 1]
+        st.session_state.start_time = time.time()
+with col6: st.button("▶️ RIGHT", on_click=move_snake, args=(1, 0), use_container_width=True)
+col7, col8, col9 = st.columns([1, 1, 1])
+with col8: st.button("🔽 DOWN", on_click=move_snake, args=(0, 1), use_container_width=True)
 
-if __name__ == "__main__":
-    main()
+# --- Pygame Rendering Logic  ---
+surface = pygame.Surface((WIDTH, HEIGHT))
+surface.fill(BG_COLOR)
+
+# Calculate centering offsets
+offset_x = (WIDTH - (cols * TILE_SIZE)) // 2
+offset_y = (HEIGHT - (rows * TILE_SIZE)) // 2
+
+# Shake Effect
+if st.session_state.shake_frames > 0:
+    offset_x += random.randint(-5, 5)
+    offset_y += random.randint(-5, 5)
+    st.session_state.shake_frames -= 1
+
+# Draw Maze Walls [cite: 16, 17]
+for r in range(rows):
+    for c in range(cols):
+        rect = pygame.Rect(offset_x + c * TILE_SIZE, offset_y + r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+        if maze[r][c] == 1:
+            pygame.draw.rect(surface, WALL_COLOR, rect)
+
+# Draw Goal [cite: 16, 18]
+goal_rect = pygame.Rect(offset_x + (cols-2) * TILE_SIZE, offset_y + (rows-2) * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+pygame.draw.rect(surface, GOAL_COLOR, goal_rect)
+
+# Draw Snake (Player) [cite: 11, 16]
+snake_rect = pygame.Rect(offset_x + snake_pos[0] * TILE_SIZE, offset_y + snake_pos[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+pygame.draw.rect(surface, SNAKE_COLOR, snake_rect)
+
+# Convert Pygame Surface to PIL Image for Streamlit Compatibility
+image_data = pygame.image.tostring(surface, "RGB")
+img = Image.frombytes("RGB", (WIDTH, HEIGHT), image_data)
+
+# Display the game frame on Streamlit
+st.image(img, use_container_width=True)
+
+# Sidebar Quit Option [cite: 26]
+if st.sidebar.button("Quit & Reset Entire Game"):
+    st.session_state.clear()
+    st.rerun()
