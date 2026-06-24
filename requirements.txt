@@ -1,1 +1,5 @@
+streamlit
 pygame
+random
+time
+sys
