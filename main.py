@@ -15,9 +15,8 @@ import pygame
 pygame.display.init()
 
 # --- Streamlit Configurations ---
-st.set_page_config(page_title="2D Snake Maze Ultimate Pro", layout="centered")
-st.title("🐍 2D Snake Maze Ultimate Pro")
-st.write("Use the manual buttons below or custom configurations to guide your multi-segment snake to the trophy!")
+st.set_page_config(page_title="2D Snake Maze game", layout="centered")
+st.title("🐍 2D Snake Maze game ")
 
 # --- Game Resolution Settings ---
 TILE_SIZE = 30
