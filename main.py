@@ -4,7 +4,6 @@ import random
 import time
 import math
 from PIL import Image
-import streamlit.components.v1 as components
 
 # --- Headless Server Fixes (For Cloud Deployment) ---
 os.environ["SDL_VIDEODRIVER"] = "dummy" 
@@ -18,7 +17,7 @@ pygame.display.init()
 # --- Streamlit Configurations ---
 st.set_page_config(page_title="2D Snake Maze Ultimate Pro", layout="centered")
 st.title("🐍 2D Snake Maze Ultimate Pro")
-st.write("Click anywhere on the game page, then use your **Keyboard Arrow Keys** or the buttons below to move!")
+st.write("Use the manual buttons below or custom configurations to guide your multi-segment snake to the trophy!")
 
 # --- Game Resolution Settings ---
 TILE_SIZE = 30
@@ -126,8 +125,8 @@ def move_snake(dx, dy):
     
     # 1. Pure Python Wall Crash Detection
     if not (0 <= target_head[0] < cols and 0 <= target_head[1] < rows) or maze[target_head[1]][target_head[0]] == 1:
-        st.session_state.pure_python_shake = 8  
-        st.session_state.snake_body = [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]] 
+        st.session_state.pure_python_shake = 8  # Trigger 8 cycles of canvas-level shake
+        st.session_state.snake_body = [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]] # Restart same layout position
         st.session_state.start_time = time.time()
         st.session_state.game_logs.append("Crashed into a wall! Position Reset to Start.")
         if st.session_state.score >= 5:
@@ -155,6 +154,7 @@ def move_snake(dx, dy):
         found_item = st.session_state.active_items.pop(item_hit_index)
         st.session_state.total_apples_eaten += 1
         
+        # Point Calculation by item types
         if found_item["type"] == "apple":
             st.session_state.score += 10
             st.session_state.game_logs.append("Ate a juicy apple (+10 Score)")
@@ -168,6 +168,7 @@ def move_snake(dx, dy):
         if st.session_state.score > st.session_state.high_score:
             st.session_state.high_score = st.session_state.score
             
+        # Spawn substitution item safely
         if len(st.session_state.active_items) < 2:
             st.session_state.active_items.extend(generate_maze_items(maze, rows, cols, current_segments, 2))
     else:
@@ -184,34 +185,6 @@ def move_snake(dx, dy):
             st.balloons()
         else:
             st.success("Masterful! All 100 Levels Conquered successfully!")
-
-# --- JavaScript Browser Keyboard Listener ---
-# This listens for Arrow keys and clicks hidden Streamlit buttons instantly
-components.html(
-    """
-    <script>
-    const doc = window.parent.document;
-    doc.addEventListener('keydown', function(e) {
-        let btnText = "";
-        if (e.key === "ArrowUp") btnText = "🔼 MOVE UP";
-        if (e.key === "ArrowDown") btnText = "🔽 MOVE DOWN";
-        if (e.key === "ArrowLeft") btnText = "◀️ MOVE LEFT";
-        if (e.key === "ArrowRight") btnText = "▶️ MOVE RIGHT";
-        
-        if (btnText) {
-            e.preventDefault(); // Stop page scrolling
-            const buttons = Array.from(doc.querySelectorAll('button'));
-            const targetBtn = buttons.find(el => el.innerText.includes(btnText));
-            if (targetBtn) {
-                targetBtn.click();
-            }
-        }
-    });
-    </script>
-    """,
-    height=0,
-    width=0,
-)
 
 # --- Metric Tracking Layout Displays ---
 stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
@@ -232,25 +205,82 @@ with c_row5:
     if st.button("🔄 RESTART LEVEL", use_container_width=True):
         st.session_state.snake_body = [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]]
         st.session_state.start_time = time.time()
+        st.session_state.game_logs.append("User requested immediate level coordinate reset.")
 with c_row6: st.button("▶️ MOVE RIGHT", on_click=move_snake, args=(1, 0), use_container_width=True)
 
 c_row7, c_row8, c_row9 = st.columns([1, 1, 1])
 with c_row8: st.button("🔽 MOVE DOWN", on_click=move_snake, args=(0, 1), use_container_width=True)
 
-# --- Pygame Surface Rendering Engine to Image ---
-surface = pygame.Surface((cols * TILE_SIZE, rows * TILE_SIZE))
+# --- Python-Based Graphics & Canvas Generation ---
+surface = pygame.Surface((WIDTH, HEIGHT))
 surface.fill(BG_COLOR)
 
-# 1. Draw Maze Walls
+# Calculate dynamic center alignments
+offset_x = (WIDTH - (cols * TILE_SIZE)) // 2
+offset_y = (HEIGHT - (rows * TILE_SIZE)) // 2
+
+# --- PURE PYTHON CANVAS SHAKE RE-CALCULATION ---
+# Screen vibration handle karne ke liye render offsets mein matrix variables ko shuffle kiya jata hai
+if st.session_state.pure_python_shake > 0:
+    offset_x += random.randint(-10, 10)
+    offset_y += random.randint(-10, 10)
+    st.session_state.pure_python_shake -= 1
+
+# Render Walls Into Matrix
 for r in range(rows):
     for c in range(cols):
+        block_rect = pygame.Rect(offset_x + c * TILE_SIZE, offset_y + r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
         if maze[r][c] == 1:
-            pygame.draw.rect(surface, WALL_COLOR, (c * TILE_SIZE + 1, r * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2))
+            pygame.draw.rect(surface, WALL_COLOR, block_rect, border_radius=4)
 
-# 2. Draw Target Trophy Goal
-pygame.draw.rect(surface, GOAL_COLOR, ((cols - 2) * TILE_SIZE + 4, (rows - 2) * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8))
+# Render Trophy Destination Goal
+end_rect = pygame.Rect(offset_x + (cols-2) * TILE_SIZE + 2, offset_y + (rows-2) * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4)
+pygame.draw.rect(surface, GOAL_COLOR, end_rect, border_radius=6)
 
-# 3. Draw Active Score Loot Items
-for item in st.session_state.active_items:
-    color = ITEM_COLORS.get(item["type"], (255, 255, 255))
-    pos = item["pos"]
+# Render Active Collectibles
+for target_item in st.session_state.active_items:
+    ipos = target_item["pos"]
+    itype = target_item["type"]
+    icolor = ITEM_COLORS.get(itype, (255, 255, 255))
+    
+    item_rect = pygame.Rect(offset_x + ipos[0] * TILE_SIZE + 6, offset_y + ipos[1] * TILE_SIZE + 6, TILE_SIZE - 12, TILE_SIZE - 12)
+    pygame.draw.rect(surface, icolor, item_rect, border_radius=8)
+
+# Render Beautiful Multi-Segment Animated Snake
+for idx, segment in enumerate(st.session_state.snake_body):
+    seg_rect = pygame.Rect(offset_x + segment[0] * TILE_SIZE + 3, offset_y + segment[1] * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6)
+    
+    # Pure Python color blending algorithm for a smooth gradient tail effect
+    if idx == 0:
+        segment_color = (51, 255, 119) # Bright Green Head
+    else:
+        # Dynamic phase color mapping logic
+        color_phase = (idx * 35) % 120
+        segment_color = (0, 210 - color_phase, 80 + color_phase // 2)
+        
+    pygame.draw.rect(surface, segment_color, seg_rect, border_radius=5)
+
+# Convert Canvas Buffer To Python PIL Image Stream Object
+try:
+    byte_stream = pygame.image.tobytes(surface, "RGB")
+except AttributeError:
+    byte_stream = pygame.image.tostring(surface, "RGB")
+
+final_processed_image = Image.frombytes("RGB", (WIDTH, HEIGHT), byte_stream)
+st.image(final_processed_image, use_container_width=True)
+
+# --- Pure Python Auto Rerun Loop for Shake Effect ---
+if st.session_state.pure_python_shake > 0:
+    time.sleep(0.02)
+    st.rerun()
+
+# --- Custom Python Dashboard Side Panel ---
+st.sidebar.markdown("### 🏆 Live Game Console Logs")
+for log_line in reversed(st.session_state.game_logs[-6:]):
+    st.sidebar.info(log_line)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚙️ Master Reset Settings")
+if st.sidebar.button("Hard Reset Game Engine"):
+    st.session_state.clear()
+    st.rerun()
