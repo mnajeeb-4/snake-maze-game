@@ -15,9 +15,9 @@ import pygame
 pygame.display.init()
 
 # --- Streamlit Configurations ---
-st.set_page_config(page_title="2D Snake Maze Ultimate Pro", layout="centered")
-st.title("🐍 2D Snake Maze Ultimate Pro")
-st.write("Apne keyboard ke Arrow Keys ya W, A, S, D se khele! Red Dot ghosts se bachein aur tez bhagein.")
+st.set_page_config(page_title="2D Snake Maze", layout="centered")
+st.title("🐍 2D Snake Maze ")
+st.write("A Dushmano se bachein aur portals ka istemal karein")
 
 # --- Game Resolution Settings ---
 TILE_SIZE = 30
@@ -27,9 +27,9 @@ WIDTH, HEIGHT = 600, 450
 BG_COLOR = (12, 14, 24)
 WALL_COLOR = (34, 112, 198)
 GOAL_COLOR = (255, 204, 0)
-ENEMY_RED_DOT = (255, 30, 30) # Red dot color for ghosts
-PORTAL_1_COLOR = (0, 255, 255) 
-PORTAL_2_COLOR = (255, 0, 255) 
+ENEMY_COLOR = (255, 255, 0)       
+PORTAL_1_COLOR = (0, 191, 255)    
+PORTAL_2_COLOR = (0, 191, 255)    
 
 ITEM_COLORS = {
     "apple": (255, 51, 51),
@@ -62,21 +62,21 @@ def generate_entities(maze, rows, cols, snake):
     
     random.shuffle(available_spaces)
     
-    # Spawn Items
+    # 1. Spawn Items (Loot)
     items_list = []
     types = ["apple", "apple", "gem", "diamond"]
     for _ in range(min(3, len(available_spaces))):
         space = available_spaces.pop()
         items_list.append({"pos": space, "type": random.choice(types)})
         
-    # Spawn Portals
+    # 2. Spawn Teleportation Portals (Needs exactly 2 spaces)
     portals = []
     if len(available_spaces) >= 2:
         portals = [available_spaces.pop(), available_spaces.pop()]
         
-    # Spawn Ghosts
+    # 3. Spawn Moving Enemies (More enemies on higher levels)
     enemies = []
-    num_enemies = min(st.session_state.level // 2, 6) 
+    num_enemies = min(st.session_state.level // 2, 5) # Max 5 enemies
     for _ in range(min(num_enemies, len(available_spaces))):
         enemies.append(available_spaces.pop())
         
@@ -112,13 +112,13 @@ if 'maze' not in st.session_state or 'current_level' not in st.session_state or 
     st.session_state.portals = ports
     st.session_state.enemies = enems
     st.session_state.current_level = st.session_state.level
-    st.session_state.game_logs.append(f"Level {st.session_state.level} Ready!")
+    st.session_state.game_logs.append(f"Level {st.session_state.level} Prepared!")
 
 maze = st.session_state.maze
 rows = st.session_state.rows
 cols = st.session_state.cols
 
-# --- Move Snake Actions Handler ---
+# --- Move Snake & Enemy Logic ---
 def move_snake(dx, dy):
     current_segments = list(st.session_state.snake_body)
     lead_head = current_segments[0]
@@ -126,7 +126,7 @@ def move_snake(dx, dy):
     
     # 1. Wall Crash Detection
     if not (0 <= target_head[0] < cols and 0 <= target_head[1] < rows) or maze[target_head[1]][target_head[0]] == 1:
-        st.session_state.pure_python_shake = 5 # Kam time shake for instant recovery
+        st.session_state.pure_python_shake = 4
         st.session_state.snake_body = [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]] 
         st.session_state.start_time = time.time()
         st.session_state.game_logs.append("Crashed into a wall! Position Reset.")
@@ -141,7 +141,7 @@ def move_snake(dx, dy):
             target_head = list(st.session_state.portals[0])
             st.session_state.game_logs.append("Whoosh! Teleported!")
 
-    # 3. Enemy Ghost Patrol Logic
+    # 3. Enemy Collision & Movement Logic
     new_enemies = []
     hit_enemy = False
     for ex, ey in st.session_state.enemies:
@@ -163,10 +163,10 @@ def move_snake(dx, dy):
     st.session_state.enemies = new_enemies
     
     if hit_enemy or target_head in st.session_state.enemies:
-        st.session_state.pure_python_shake = 6
+        st.session_state.pure_python_shake = 5
         st.session_state.snake_body = [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]]
         st.session_state.start_time = time.time()
-        st.session_state.game_logs.append("Hit a Red Dot Ghost! Level Reset.")
+        st.session_state.game_logs.append("Caught by a Ghost! Level Reset.")
         return
 
     # 4. Tail Collision Check
@@ -174,12 +174,12 @@ def move_snake(dx, dy):
         st.session_state.pure_python_shake = 4
         st.session_state.snake_body = [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]]
         st.session_state.start_time = time.time()
-        st.session_state.game_logs.append("Bit your own tail!")
+        st.session_state.game_logs.append("Bit your tail! Reset.")
         return
         
     current_segments.insert(0, target_head)
     
-    # 5. Loot Collection Logic
+    # 5. Loot Logic
     item_hit_index = -1
     for index, live_item in enumerate(st.session_state.active_items):
         if target_head == live_item["pos"]:
@@ -190,7 +190,7 @@ def move_snake(dx, dy):
         found_item = st.session_state.active_items.pop(item_hit_index)
         points = {"apple": 10, "gem": 25, "diamond": 50}[found_item["type"]]
         st.session_state.score += points
-        st.session_state.game_logs.append(f"Ate {found_item['type']} (+{points})")
+        st.session_state.game_logs.append(f"Collected {found_item['type']} (+{points})")
         if st.session_state.score > st.session_state.high_score:
             st.session_state.high_score = st.session_state.score
     else:
@@ -198,15 +198,15 @@ def move_snake(dx, dy):
         
     st.session_state.snake_body = current_segments
         
-    # 6. Target Reached Win Handle
+    # 6. Win Condition
     if target_head == [cols-2, rows-2]:
         if st.session_state.level < 100:
             st.session_state.level += 1
             st.session_state.score += 100
-            st.session_state.game_logs.append(f"Level Cleared!")
+            st.session_state.game_logs.append(f"Stage Cleared! Level Up!")
             st.balloons()
         else:
-            st.success("Masterful! Game Completed!")
+            st.success("Masterful! All 100 Levels Conquered successfully!")
 
 # --- Metric Tracking Layout Displays ---
 stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
@@ -217,8 +217,8 @@ with stat_col4:
     duration = int(time.time() - st.session_state.start_time)
     st.metric("Timer", f"{duration}s")
 
-# --- ⌨️ OPTIMIZED KEYBOARD CONTROLLER BOX ---
-key_input = st.text_input("🎮 TYPE HERE TO MOVE FAST (w/a/s/d or Arrow Keys) then press Enter:", key="kb_in")
+# --- ⌨️ PURE PYTHON KEYBOARD CONTROLLER ---
+key_input = st.text_input("🎮 TYPE HERE TO MOVE (w=Up, a=Left, s=Down, d=Right) then press Enter:", key="kb_in")
 
 if key_input:
     k = key_input.strip().lower()
@@ -226,10 +226,11 @@ if key_input:
     elif k in ["s", "down"]: move_snake(0, 1)
     elif k in ["a", "left"]: move_snake(-1, 0)
     elif k in ["d", "right"]: move_snake(1, 0)
-    st.session_state.kb_in = "" 
+    st.session_state.kb_in = "" # Reset input box
     st.rerun()
 
-with st.expander("Show Screen Control Buttons"):
+# --- Backup Manual Controls ---
+with st.expander("Show Screen Controls (On-screen Buttons)"):
     c_row1, c_row2, c_row3 = st.columns([1, 1, 1])
     with c_row2: st.button("🔼 UP", on_click=move_snake, args=(0, -1), use_container_width=True)
     c_row4, c_row5, c_row6 = st.columns([1, 1, 1])
@@ -238,16 +239,17 @@ with st.expander("Show Screen Control Buttons"):
     c_row7, c_row8, c_row9 = st.columns([1, 1, 1])
     with c_row8: st.button("🔽 DOWN", on_click=move_snake, args=(0, 1), use_container_width=True)
 
-# --- Python-Based Graphics & Canvas Generation ---
+# --- Python-Based Graphics Generation ---
 surface = pygame.Surface((WIDTH, HEIGHT))
 surface.fill(BG_COLOR)
 
 offset_x = (WIDTH - (cols * TILE_SIZE)) // 2
 offset_y = (HEIGHT - (rows * TILE_SIZE)) // 2
 
+# Canvas Shake 
 if st.session_state.pure_python_shake > 0:
-    offset_x += random.randint(-6, 6)
-    offset_y += random.randint(-6, 6)
+    offset_x += random.randint(-5, 5)
+    offset_y += random.randint(-5, 5)
     st.session_state.pure_python_shake -= 1
 
 # Render Walls
@@ -257,52 +259,54 @@ for r in range(rows):
         if maze[r][c] == 1:
             pygame.draw.rect(surface, WALL_COLOR, block_rect, border_radius=4)
 
-# Render Goal Trophy
+# Render Goal
 end_rect = pygame.Rect(offset_x + (cols-2) * TILE_SIZE + 2, offset_y + (rows-2) * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4)
 pygame.draw.rect(surface, GOAL_COLOR, end_rect, border_radius=6)
 
-# Render Portals (Math Pulsing Radius)
+# Render Portals using MATH module (Dono Portals Ab Sky Blue Hain)
 if len(st.session_state.portals) == 2:
     p1, p2 = st.session_state.portals
-    pulse_radius = int(10 + 2 * math.sin(time.time() * 6))
+    pulse_radius = int(10 + 3 * math.sin(time.time() * 5))
     pygame.draw.circle(surface, PORTAL_1_COLOR, (offset_x + p1[0]*TILE_SIZE + 15, offset_y + p1[1]*TILE_SIZE + 15), pulse_radius)
     pygame.draw.circle(surface, PORTAL_2_COLOR, (offset_x + p2[0]*TILE_SIZE + 15, offset_y + p2[1]*TILE_SIZE + 15), pulse_radius)
 
-# RENDER ITEMS: Apple aur loot items ko properly sharp rectangular frames mein rkha hai (No Dot)
+# RENDER ITEMS: Apples aur gems ko clean square shape diya hai (No Dots!)
 for target_item in st.session_state.active_items:
     ipos = target_item["pos"]
     icolor = ITEM_COLORS.get(target_item["type"], (255, 255, 255))
-    item_rect = pygame.Rect(offset_x + ipos[0] * TILE_SIZE + 5, offset_y + ipos[1] * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10)
-    pygame.draw.rect(surface, icolor, item_rect, border_radius=6)
+    item_rect = pygame.Rect(offset_x + ipos[0] * TILE_SIZE + 4, offset_y + ipos[1] * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+    pygame.draw.rect(surface, icolor, item_rect, border_radius=4)
 
-# RENDER GHOST ENEMIES: Ab ghost ki jagah proper RED DOT dikhega jaisa aapne kaha!
+# RENDER ENEMIES: Dushmano ko proper Yellow box banaya hai
 for ex, ey in st.session_state.enemies:
-    center_dot_x = offset_x + ex * TILE_SIZE + 15
-    center_dot_y = offset_y + ey * TILE_SIZE + 15
-    pygame.draw.circle(surface, ENEMY_RED_DOT, (center_dot_x, center_dot_y), 6) # Small clean red dot
+    enemy_rect = pygame.Rect(offset_x + ex * TILE_SIZE + 4, offset_y + ey * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+    pygame.draw.rect(surface, ENEMY_COLOR, enemy_rect, border_radius=5)
 
-# RENDER PROPER SNAKE: Snake ke head aur body pieces ke gaps khatam karke cohesive proper snake banaya hai
+# RENDER PROPER SNAKE: Gaps ko khatam kiya taake paani ki tarah smooth seamless body bane (No Dots)
 for idx, segment in enumerate(st.session_state.snake_body):
-    # Border gap kam kiya taake body aapas mein seamless proper snake dikhe
-    seg_rect = pygame.Rect(offset_x + segment[0] * TILE_SIZE + 1, offset_y + segment[1] * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2)
+    # Padding hatane se saare segments aapas mein seamless connect ho jate hain
+    seg_rect = pygame.Rect(offset_x + segment[0] * TILE_SIZE, offset_y + segment[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
     if idx == 0:
-        pygame.draw.rect(surface, (51, 255, 119), seg_rect, border_radius=4) # Head
+        pygame.draw.rect(surface, (51, 255, 119), seg_rect) # Snake Head
     else:
-        color_phase = (idx * 25) % 100
-        pygame.draw.rect(surface, (0, 200 - color_phase, 90 + color_phase), seg_rect, border_radius=2) # Connected tail
+        color_phase = (idx * 20) % 110
+        pygame.draw.rect(surface, (0, 220 - color_phase, 90 + color_phase // 2), seg_rect) # Seamless Water Body
 
-# Fog of War Effect
+# --- FOG OF WAR (NIGHT MODE) EFFECT USING MATH ---
 if hardcore_mode:
     fog = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     fog.fill((5, 5, 10, 245)) 
+    
     head_pos = st.session_state.snake_body[0]
     center_x = offset_x + head_pos[0] * TILE_SIZE + 15
     center_y = offset_y + head_pos[1] * TILE_SIZE + 15
-    flicker_radius = int(75 + 4 * math.sin(time.time() * 14))
+    
+    flicker_radius = int(75 + 5 * math.sin(time.time() * 12))
     pygame.draw.circle(fog, (0, 0, 0, 0), (center_x, center_y), flicker_radius) 
+    
     surface.blit(fog, (0, 0))
 
-# Convert to PIL and output
+# Convert to Image
 try:
     byte_stream = pygame.image.tobytes(surface, "RGB")
 except AttributeError:
@@ -310,9 +314,9 @@ except AttributeError:
 
 st.image(Image.frombytes("RGB", (WIDTH, HEIGHT), byte_stream), use_container_width=True)
 
-# Super Smooth Rerun speed optimization
+# Optimized Smooth Shake Loop Time
 if st.session_state.pure_python_shake > 0:
-    time.sleep(0.005) # Super fast execution speed loop
+    time.sleep(0.005)
     st.rerun()
 
 # --- Sidebar Logs ---
